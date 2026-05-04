@@ -132,6 +132,10 @@ func getVNAHostname() string {
 	return name
 }
 
+func getVNAClusterName() string {
+	return os.Getenv("NSXT_TEST_VNA_CLUSTER_NAME")
+}
+
 func getHostTransportNodeName() string {
 	return os.Getenv("NSXT_TEST_HOST_TRANSPORT_NODE")
 }
@@ -218,6 +222,26 @@ func testAccEnvDefined(t *testing.T, envVar string) {
 	if len(os.Getenv(envVar)) == 0 {
 		t.Skipf("This test requires %s environment variable to be set", envVar)
 	}
+}
+
+// testAccNsxtDnsVnaClusterTemplate returns HCL that looks up a pre-created
+// VPC_SERVICES VNA cluster (via NSXT_TEST_VNA_CLUSTER_NAME) and creates an
+// inline transit gateway required by PolicyDnsService.
+// Exposed references:
+//   - data.nsxt_policy_virtual_network_appliance_cluster.vna.path
+//   - nsxt_policy_transit_gateway.dns_tgw.path
+func testAccNsxtDnsVnaClusterTemplate(displayName string) string {
+	return fmt.Sprintf(`
+data "nsxt_policy_virtual_network_appliance_cluster" "vna" {
+  display_name = "%s"
+}
+
+resource "nsxt_policy_transit_gateway" "dns_tgw" {
+  %s
+  display_name    = "%s-tgw"
+  transit_subnets = ["192.168.200.0/24"]
+}
+`, getVNAClusterName(), testAccNsxtProjectContext(), displayName)
 }
 
 func testAccIsGlobalManager() bool {
