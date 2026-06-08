@@ -35,16 +35,16 @@ func (m *MockStatisticsClient) EXPECT() *MockStatisticsClientMockRecorder {
 }
 
 // Get mocks base method.
-func (m *MockStatisticsClient) Get(routeControllerIdParam, interfaceIdParam string) (model.RouteControllerInterfaceStatistics, error) {
+func (m *MockStatisticsClient) Get(routeControllerIdParam, interfaceIdParam string, cursorParam *string, edgePathParam *string, enforcementPointPathParam *string, includeMarkForDeleteObjectsParam *bool, includedFieldsParam *string, pageSizeParam *int64, sortAscendingParam *bool, sortByParam *string, sourceParam *string, statsTypeParam *string, transportNodeIdParam *string) (model.RouteControllerInterfaceStatistics, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", routeControllerIdParam, interfaceIdParam)
+	ret := m.ctrl.Call(m, "Get", routeControllerIdParam, interfaceIdParam, cursorParam, edgePathParam, enforcementPointPathParam, includeMarkForDeleteObjectsParam, includedFieldsParam, pageSizeParam, sortAscendingParam, sortByParam, sourceParam, statsTypeParam, transportNodeIdParam)
 	ret0, _ := ret[0].(model.RouteControllerInterfaceStatistics)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockStatisticsClientMockRecorder) Get(routeControllerIdParam, interfaceIdParam interface{}) *gomock.Call {
+func (mr *MockStatisticsClientMockRecorder) Get(routeControllerIdParam, interfaceIdParam, cursorParam, edgePathParam, enforcementPointPathParam, includeMarkForDeleteObjectsParam, includedFieldsParam, pageSizeParam, sortAscendingParam, sortByParam, sourceParam, statsTypeParam, transportNodeIdParam interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockStatisticsClient)(nil).Get), routeControllerIdParam, interfaceIdParam)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockStatisticsClient)(nil).Get), routeControllerIdParam, interfaceIdParam, cursorParam, edgePathParam, enforcementPointPathParam, includeMarkForDeleteObjectsParam, includedFieldsParam, pageSizeParam, sortAscendingParam, sortByParam, sourceParam, statsTypeParam, transportNodeIdParam)
 }
