@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/vmware/terraform-provider-nsxt/api/orgs/projects"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/protocol/client"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
@@ -19,6 +20,11 @@ import (
 )
 
 var cliProjectIpAddressAllocationsClient = projects.NewIpAddressAllocationsClient
+
+var projectIpAddressAllocationIpAddressTypeValues = []string{
+	model.ProjectIpAddressAllocation_IP_ADDRESS_TYPE_IPV4,
+	model.ProjectIpAddressAllocation_IP_ADDRESS_TYPE_IPV6,
+}
 
 var projectIpAddressAllocationSchema = map[string]*metadata.ExtendedSchema{
 	"nsx_id":       metadata.GetExtendedSchema(getNsxIDSchema()),
@@ -52,6 +58,33 @@ var projectIpAddressAllocationSchema = map[string]*metadata.ExtendedSchema{
 		Metadata: metadata.Metadata{
 			SchemaType:   "int",
 			SdkFieldName: "AllocationSize",
+			OmitIfEmpty:  true,
+		},
+	},
+	"ip_address_type": {
+		Schema: schema.Schema{
+			Type:         schema.TypeString,
+			ValidateFunc: validation.StringInSlice(projectIpAddressAllocationIpAddressTypeValues, false),
+			Optional:     true,
+			Default:      model.ProjectIpAddressAllocation_IP_ADDRESS_TYPE_IPV4,
+			ForceNew:     true,
+		},
+		Metadata: metadata.Metadata{
+			SchemaType:   "string",
+			SdkFieldName: "IpAddressType",
+		},
+	},
+	"ipv6_allocation_prefix_length": {
+		Schema: schema.Schema{
+			Type:         schema.TypeInt,
+			Optional:     true,
+			Computed:     true,
+			ValidateFunc: validation.IntBetween(64, 128),
+			ForceNew:     true,
+		},
+		Metadata: metadata.Metadata{
+			SchemaType:   "int",
+			SdkFieldName: "Ipv6AllocationPrefixLength",
 			OmitIfEmpty:  true,
 		},
 	},

@@ -94,6 +94,50 @@ func TestMockResourceNsxtPolicyProjectIpAddressAllocationCreate(t *testing.T) {
 		assert.Equal(t, ipAllocDisplayName, d.Get("display_name"))
 	})
 
+	t.Run("Create success IPv6", func(t *testing.T) {
+		notFoundErr := vapiErrors.NotFound{}
+		ipType := nsxModel.ProjectIpAddressAllocation_IP_ADDRESS_TYPE_IPV6
+		prefixLen := int64(64)
+		allocSize := int64(1)
+		ipBlock := "/infra/ip-blocks/block-v6"
+		v6Response := nsxModel.ProjectIpAddressAllocation{
+			Id:                         &ipAllocID,
+			DisplayName:                &ipAllocDisplayName,
+			Description:                &ipAllocDescription,
+			Revision:                   &ipAllocRevision,
+			IpAddressType:              &ipType,
+			Ipv6AllocationPrefixLength: &prefixLen,
+			AllocationSize:             &allocSize,
+			IpBlock:                    &ipBlock,
+		}
+		gomock.InOrder(
+			mockSDK.EXPECT().Get(ipAllocOrgID, ipAllocProjectID, ipAllocID).Return(nsxModel.ProjectIpAddressAllocation{}, notFoundErr),
+			mockSDK.EXPECT().Patch(ipAllocOrgID, ipAllocProjectID, ipAllocID, gomock.Any()).DoAndReturn(
+				func(_ string, _ string, _ string, req nsxModel.ProjectIpAddressAllocation) error {
+					assert.Equal(t, &ipType, req.IpAddressType)
+					assert.Equal(t, &prefixLen, req.Ipv6AllocationPrefixLength)
+					assert.Equal(t, &allocSize, req.AllocationSize)
+					assert.Equal(t, &ipBlock, req.IpBlock)
+					return nil
+				}),
+			mockSDK.EXPECT().Get(ipAllocOrgID, ipAllocProjectID, ipAllocID).Return(v6Response, nil),
+		)
+
+		res := resourceNsxtPolicyProjectIpAddressAllocation()
+		data := minimalIpAllocData()
+		data["ip_address_type"] = "IPV6"
+		data["ipv6_allocation_prefix_length"] = 64
+		data["allocation_size"] = 1
+		data["ip_block"] = "/infra/ip-blocks/block-v6"
+		d := schema.TestResourceDataRaw(t, res.Schema, data)
+
+		err := resourceNsxtPolicyProjectIpAddressAllocationCreate(d, newGoMockProviderClient())
+		require.NoError(t, err)
+		assert.Equal(t, ipAllocID, d.Id())
+		assert.Equal(t, "IPV6", d.Get("ip_address_type"))
+		assert.Equal(t, 64, d.Get("ipv6_allocation_prefix_length"))
+	})
+
 	t.Run("Create fails when already exists", func(t *testing.T) {
 		mockSDK.EXPECT().Get(ipAllocOrgID, ipAllocProjectID, ipAllocID).Return(ipAllocAPIResponse(), nil)
 
