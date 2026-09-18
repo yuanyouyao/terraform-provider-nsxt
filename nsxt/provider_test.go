@@ -8,10 +8,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
+	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/vmware/terraform-provider-nsxt/nsxt/util"
 
@@ -20,12 +25,14 @@ import (
 	api "github.com/vmware/go-vmware-nsxt"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/core"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/protocol/client"
+	"github.com/vmware/vsphere-automation-sdk-go/runtime/protocol/client/middleware/retry"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/security"
 )
 
 var testAccProviders map[string]*schema.Provider
 var testAccProvider *schema.Provider
 var testAccConnector client.Connector
+var testAccConnectorMutex sync.Mutex
 
 func init() {
 
@@ -132,6 +139,9 @@ func testAccNSXVersionLessThan(t *testing.T, requiredVersion string) {
 }
 
 func testAccGetPolicyConnector() (client.Connector, error) {
+	testAccConnectorMutex.Lock()
+	defer testAccConnectorMutex.Unlock()
+
 	if testAccConnector != nil {
 		return testAccConnector, nil
 	}
@@ -161,9 +171,51 @@ func testAccGetPolicyConnector() (client.Connector, error) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure},
 		Proxy:           http.ProxyFromEnvironment,
+		IdleConnTimeout: 15 * time.Second,
 	}
 	httpClient := http.Client{Transport: tr}
-	connector := client.NewConnector(host, client.UsingRest(nil), client.WithHttpClient(&httpClient), client.WithSecurityContext(securityCtx))
+
+	retryFunc := func(retryContext retry.RetryContext) bool {
+		log.Printf("[DEBUG] testAcc Retry Context: %v", retryContext)
+		shouldRetry := false
+		if retryContext.Response != nil {
+			for _, code := range defaultRetryOnStatusCodes {
+				if retryContext.Response.StatusCode == code {
+					log.Printf("[DEBUG]: Retrying request due to error code %d", code)
+					shouldRetry = true
+					break
+				}
+			}
+		} else {
+			shouldRetry = true
+			log.Printf("[DEBUG]: Retrying request due to error")
+		}
+
+		if !shouldRetry {
+			return false
+		}
+
+		interval := (rand.Intn(500) + 100) // #nosec G404 -- non-cryptographic retry jitter
+		time.Sleep(time.Duration(interval) * time.Millisecond)
+		log.Printf("[DEBUG]: Waited %d ms before retrying", interval)
+
+		return true
+	}
+
+	maxRetries := 4
+	if v := os.Getenv("NSXT_MAX_RETRIES"); v != "" {
+		if r, err := strconv.Atoi(v); err == nil && r > 0 {
+			maxRetries = r
+		}
+	}
+
+	connector := client.NewConnector(
+		host,
+		client.UsingRest(nil),
+		client.WithHttpClient(&httpClient),
+		client.WithSecurityContext(securityCtx),
+		client.WithDecorators(retry.NewRetryDecorator(uint(maxRetries), retryFunc)),
+	)
 
 	testAccConnector = connector
 
