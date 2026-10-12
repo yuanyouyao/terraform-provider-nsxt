@@ -66,11 +66,6 @@ var IPSecVpnSessionComplianceSuite = []string{
 	model.IPSecVpnSession_COMPLIANCE_SUITE_NONE,
 }
 
-var IPSecRulesActionValues = []string{
-	model.IPSecVpnRule_ACTION_PROTECT,
-	model.IPSecVpnRule_ACTION_BYPASS,
-}
-
 func getIPSecVpnSessionCommon(isTransitGateway bool) map[string]*metadata.ExtendedSchema {
 	schemaMap := map[string]*metadata.ExtendedSchema{
 		"nsx_id":              metadata.GetExtendedSchema(getNsxIDSchema()),
