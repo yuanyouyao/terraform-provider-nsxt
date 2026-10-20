@@ -250,13 +250,15 @@ func TestMockResourceNsxtVpcUpdate(t *testing.T) {
 }
 
 func TestMockResourceNsxtVpcDelete(t *testing.T) {
+	isRecursive := true
+
 	t.Run("Delete success", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockSDK, restore := setupVpcMock(t, ctrl)
 		defer restore()
 
-		mockSDK.EXPECT().Delete(gomock.Any(), gomock.Any(), vpcID, gomock.Any()).Return(nil)
+		mockSDK.EXPECT().Delete(gomock.Any(), gomock.Any(), vpcID, &isRecursive).Return(nil)
 
 		res := resourceNsxtVpc()
 		d := schema.TestResourceDataRaw(t, res.Schema, minimalVpcData())
@@ -272,7 +274,7 @@ func TestMockResourceNsxtVpcDelete(t *testing.T) {
 		mockSDK, restore := setupVpcMock(t, ctrl)
 		defer restore()
 
-		mockSDK.EXPECT().Delete(gomock.Any(), gomock.Any(), vpcID, gomock.Any()).Return(errors.New("delete failed"))
+		mockSDK.EXPECT().Delete(gomock.Any(), gomock.Any(), vpcID, &isRecursive).Return(errors.New("delete failed"))
 
 		res := resourceNsxtVpc()
 		d := schema.TestResourceDataRaw(t, res.Schema, minimalVpcData())

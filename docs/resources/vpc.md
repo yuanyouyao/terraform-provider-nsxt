@@ -10,6 +10,8 @@ This resource provides a method for the management of a VPC.
 
 This resource is applicable to NSX Policy Manager and is supported with NSX 9.0.0 onwards.
 
+Deleting this resource recursively deletes the VPC and all its child resources.
+
 ## Example Usage
 
 ```hcl

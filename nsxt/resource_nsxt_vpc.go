@@ -341,7 +341,8 @@ func resourceNsxtVpcDelete(d *schema.ResourceData, m interface{}) error {
 	parents := getVpcParentsFromContext(sessionContext)
 
 	client := cliVpcsClient(sessionContext, connector)
-	err := client.Delete(parents[0], parents[1], id, nil)
+	isRecursive := true
+	err := client.Delete(parents[0], parents[1], id, &isRecursive)
 
 	if err != nil {
 		return handleDeleteError("Vpc", id, err)
