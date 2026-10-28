@@ -89,45 +89,52 @@ func TestUnitNsxt_DataSourceNsxtUpgradePrepareReadyRead(t *testing.T) {
 		assert.NotEmpty(t, d.Id())
 	})
 
-	t.Run("acknowledged warning does not block", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		_, _, mockFailures, restore := setupPrecheckAcknowledgeMocks(ctrl)
-		defer restore()
+	needsAck := true
+	noAckNeeded := false
+	warningCases := []struct {
+		name     string
+		needsAck *bool
+		acked    bool
+		blocked  bool
+	}{
+		{"acknowledged warning with omitted needs_ack", nil, true, false},
+		{"unacknowledged warning with omitted needs_ack", nil, false, true},
+		{"warning requiring acknowledgement blocks", &needsAck, false, true},
+		{"acknowledged required warning does not block", &needsAck, true, false},
+		{"resolved warning requiring no acknowledgement does not block", &noAckNeeded, false, false},
+	}
+	for _, tc := range warningCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			mockChecksInfo, _, mockFailures, restore := setupPrecheckAcknowledgeMocks(ctrl)
+			defer restore()
 
-		mockFailures.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), nil, gomock.Any(), gomock.Any()).
-			Return(nsxModel.UpgradeCheckFailureListResult{Results: []nsxModel.UpgradeCheckFailure{
-				precheckWarningItem(precheckID, true),
-			}}, nil)
+			warning := precheckWarningItem(precheckID, tc.acked)
+			warning.NeedsAck = tc.needsAck
+			warning.NeedsResolve = &noAckNeeded
+			resolved := "RESOLVED"
+			warning.ResolutionStatus = &resolved
+			mockFailures.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), nil, gomock.Any(), gomock.Any()).
+				Return(nsxModel.UpgradeCheckFailureListResult{Results: []nsxModel.UpgradeCheckFailure{warning}}, nil)
+			if tc.blocked {
+				mockChecksInfo.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(checksInfoResultWithDetails(precheckID), nil)
+			}
 
-		ds := dataSourceNsxtUpgradePrepareReady()
-		d := schema.TestResourceDataRaw(t, ds.Schema, upgradePrepareReadyData(validPrepareID))
-
-		err := dataSourceNsxtUpgradePrepareReadyRead(d, newGoMockProviderClient())
-		require.NoError(t, err)
-		assert.NotEmpty(t, d.Id())
-	})
-
-	t.Run("unacknowledged warning blocks", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-		mockChecksInfo, _, mockFailures, restore := setupPrecheckAcknowledgeMocks(ctrl)
-		defer restore()
-
-		mockFailures.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), nil, gomock.Any(), gomock.Any()).
-			Return(nsxModel.UpgradeCheckFailureListResult{Results: []nsxModel.UpgradeCheckFailure{
-				precheckWarningItem(precheckID, false),
-			}}, nil)
-		mockChecksInfo.EXPECT().List(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(checksInfoResultWithDetails(precheckID), nil)
-
-		ds := dataSourceNsxtUpgradePrepareReady()
-		d := schema.TestResourceDataRaw(t, ds.Schema, upgradePrepareReadyData(validPrepareID))
-
-		err := dataSourceNsxtUpgradePrepareReadyRead(d, newGoMockProviderClient())
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unacknowledged warnings")
-	})
+			ds := dataSourceNsxtUpgradePrepareReady()
+			d := schema.TestResourceDataRaw(t, ds.Schema, upgradePrepareReadyData(validPrepareID))
+			err := dataSourceNsxtUpgradePrepareReadyRead(d, newGoMockProviderClient())
+			if tc.blocked {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unacknowledged warnings")
+				assert.Empty(t, d.Id())
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, d.Id())
+			}
+		})
+	}
 
 	t.Run("failure blocks", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
