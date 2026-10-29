@@ -40,10 +40,12 @@ type seqQueryListClient struct {
 	errs      []error
 	call      int
 	queries   []string
+	cursors   []*string
 }
 
 func (s *seqQueryListClient) List(queryParam string, cursorParam *string, includedFieldsParam *string, pageSizeParam *int64, sortAscendingParam *bool, sortByParam *string) (nsxModel.SearchResponse, error) {
 	s.queries = append(s.queries, queryParam)
+	s.cursors = append(s.cursors, cursorParam)
 	i := s.call
 	s.call++
 	if s.errs != nil && i < len(s.errs) && s.errs[i] != nil {
@@ -68,6 +70,7 @@ func TestUnitNsxt_escapeSpecialCharacters(t *testing.T) {
 	assert.Equal(t, "plain", escapeSpecialCharacters("plain"))
 	assert.Equal(t, `foo\(bar\)`, escapeSpecialCharacters("foo(bar)"))
 	assert.Equal(t, `a\+b`, escapeSpecialCharacters("a+b"))
+	assert.Equal(t, `a\\b\"c\ d`, escapeSpecialCharacters(`a\b"c d`))
 }
 
 func TestUnitNsxt_buildPolicyResourcesQuery(t *testing.T) {
@@ -122,6 +125,14 @@ func TestUnitNsxt_searchMultitenancyVPCPathSuffix(t *testing.T) {
 	_, err := searchMultitenancyResources(nil, ctx, "resource_type:Z AND marked_for_delete:false")
 	require.NoError(t, err)
 	assert.Equal(t, []string{`resource_type:Z AND marked_for_delete:false AND path:\/orgs\/default\/projects\/p1\/vpcs\/vpc1\/*`}, stub.queries)
+
+	stub.call = 0
+	stub.queries = nil
+	ctx.ProjectID = `project(blue)+1`
+	ctx.VPCID = `vpc[blue]\" *?`
+	_, err = searchMultitenancyResources(nil, ctx, "resource_type:Z AND marked_for_delete:false")
+	require.NoError(t, err)
+	assert.Equal(t, []string{`resource_type:Z AND marked_for_delete:false AND path:\/orgs\/default\/projects\/project\(blue\)\+1\/vpcs\/vpc\[blue\]\\\"\ \*\?\/*`}, stub.queries)
 }
 
 func TestUnitNsxt_listPolicyResourcesByNsxID(t *testing.T) {
@@ -213,6 +224,13 @@ func TestUnitNsxt_searchMultitenancyResourcesAppendsProjectPath(t *testing.T) {
 	_, err := searchMultitenancyResources(nil, ctx, "resource_type:Z AND marked_for_delete:false")
 	require.NoError(t, err)
 	assert.Equal(t, []string{`resource_type:Z AND marked_for_delete:false AND path:\/orgs\/default\/projects\/proj1\/*`}, stub.queries)
+
+	stub.call = 0
+	stub.queries = nil
+	ctx.ProjectID = `project[blue]+1`
+	_, err = searchMultitenancyResources(nil, ctx, "resource_type:Z AND marked_for_delete:false")
+	require.NoError(t, err)
+	assert.Equal(t, []string{`resource_type:Z AND marked_for_delete:false AND path:\/orgs\/default\/projects\/project\[blue\]\+1\/*`}, stub.queries)
 }
 
 func TestUnitNsxt_searchLMPagination(t *testing.T) {

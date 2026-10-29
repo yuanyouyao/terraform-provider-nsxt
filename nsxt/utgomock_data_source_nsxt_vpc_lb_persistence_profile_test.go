@@ -49,11 +49,6 @@ func vpcLbDsPersistData(extra map[string]interface{}) map[string]interface{} {
 	return res
 }
 
-func vpcLbDsPersistList(mockSDK *vpcsmocks.MockVpcLbPersistenceProfilesClient, results []*data.StructValue, err error) {
-	mockSDK.EXPECT().List(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nsxModel.LBPersistenceProfileListResult{Results: results}, err)
-}
-
 func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 	cookie := nsxModel.LBPersistenceProfile_RESOURCE_TYPE_LBCOOKIEPERSISTENCEPROFILE
 	sourceIP := nsxModel.LBPersistenceProfile_RESOURCE_TYPE_LBSOURCEIPPERSISTENCEPROFILE
@@ -71,7 +66,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "exact name excludes mismatched type", input: map[string]interface{}{"display_name": vpcLbDsPersistName, "type": "COOKIE"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{vpcLbDsPersistValue(t, "wrong-type", vpcLbDsPersistName, sourceIP)}, nil)
+				setupVpcLbProfileSearch(t, []*data.StructValue{vpcLbDsPersistValue(t, "wrong-type", vpcLbDsPersistName, sourceIP)}, nil)
 			},
 			errMsg: "not found",
 		},
@@ -79,16 +74,12 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 			name: "exact name selects matching type across pages", input: map[string]interface{}{"display_name": vpcLbDsPersistName, "type": "COOKIE"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
 				next := "next-page"
-				gomock.InOrder(
-					m.EXPECT().List(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, nil, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-						Return(nsxModel.LBPersistenceProfileListResult{
-							Results: []*data.StructValue{vpcLbDsPersistValue(t, "wrong-type", vpcLbDsPersistName, sourceIP)}, Cursor: &next,
-						}, nil),
-					m.EXPECT().List(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, &next, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-						Return(nsxModel.LBPersistenceProfileListResult{
-							Results: []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)},
-						}, nil),
-				)
+				total := int64(2)
+				stub := &seqQueryListClient{responses: []nsxModel.SearchResponse{
+					{Results: []*data.StructValue{vpcLbDsPersistValue(t, "wrong-type", vpcLbDsPersistName, sourceIP)}, Cursor: &next, ResultCount: &total},
+					{Results: []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)}},
+				}}
+				t.Cleanup(setupCliQueryClientStub(t, stub))
 			},
 			wantID: vpcLbDsPersistID, wantTyp: "COOKIE",
 		},
@@ -124,7 +115,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "by name perfect match", input: map[string]interface{}{"display_name": vpcLbDsPersistName},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{
+				setupVpcLbProfileSearch(t, []*data.StructValue{
 					vpcLbDsPersistValue(t, "other", "Other profile", sourceIP),
 					vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie),
 				}, nil)
@@ -134,21 +125,21 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "by name prefix match with matching type", input: map[string]interface{}{"display_name": "Test VPC LB", "type": "COOKIE"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)}, nil)
+				setupVpcLbProfileSearch(t, []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)}, nil)
 			},
 			wantID: vpcLbDsPersistID, wantTyp: "COOKIE",
 		},
 		{
 			name: "by name prefix match filtered out by type", input: map[string]interface{}{"display_name": "Test VPC LB", "type": "SOURCE_IP"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)}, nil)
+				setupVpcLbProfileSearch(t, []*data.StructValue{vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)}, nil)
 			},
 			errMsg: "not found",
 		},
 		{
 			name: "by type only", input: map[string]interface{}{"type": "SOURCE_IP"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{
+				setupVpcLbProfileSearch(t, []*data.StructValue{
 					vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie),
 					vpcLbDsPersistValue(t, "src-1", "source profile", sourceIP),
 				}, nil)
@@ -158,7 +149,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "multiple perfect matches", input: map[string]interface{}{"display_name": "dup"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{
+				setupVpcLbProfileSearch(t, []*data.StructValue{
 					vpcLbDsPersistValue(t, "dup-1", "dup", cookie),
 					vpcLbDsPersistValue(t, "dup-2", "dup", cookie),
 				}, nil)
@@ -168,7 +159,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "multiple prefix matches", input: map[string]interface{}{"display_name": "prefix"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{
+				setupVpcLbProfileSearch(t, []*data.StructValue{
 					vpcLbDsPersistValue(t, "pfx-1", "prefix-a", cookie),
 					vpcLbDsPersistValue(t, "pfx-2", "prefix-b", sourceIP),
 				}, nil)
@@ -178,21 +169,21 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		{
 			name: "name not found", input: map[string]interface{}{"display_name": "nonexistent"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, nil, nil)
+				setupVpcLbProfileSearch(t, nil, nil)
 			},
 			errMsg: "not found",
 		},
 		{
 			name: "list API error", input: map[string]interface{}{"display_name": "x"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, nil, vapiErrors.InternalServerError{})
+				setupVpcLbProfileSearch(t, nil, vapiErrors.InternalServerError{})
 			},
 			errMsg: "VPC LBPersistenceProfile",
 		},
 		{
 			name: "list conversion error", input: map[string]interface{}{"display_name": "x"},
 			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbPersistenceProfilesClient) {
-				vpcLbDsPersistList(m, []*data.StructValue{{}}, nil)
+				setupVpcLbProfileSearch(t, []*data.StructValue{{}}, nil)
 			},
 			errMsg: "resource_type",
 		},
@@ -234,7 +225,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 						if lookup == "ID" {
 							m.EXPECT().Get(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, vpcLbDsPersistID).Return(value, nil)
 						} else {
-							vpcLbDsPersistList(m, []*data.StructValue{value}, nil)
+							setupVpcLbProfileSearch(t, []*data.StructValue{value}, nil)
 						}
 					},
 					wantID: vpcLbDsPersistID, wantTyp: actualType,
@@ -286,7 +277,7 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 				case "reject multiple compatible prefixes":
 					values = append(values, vpcLbDsPersistValue(t, "other", "target-other", cookie))
 				}
-				vpcLbDsPersistList(m, values, nil)
+				setupVpcLbProfileSearch(t, values, nil)
 			},
 			wantID: selection.wantID, wantTyp: "COOKIE", errMsg: selection.errMsg,
 		})
@@ -328,11 +319,11 @@ func TestMockDataSourceNsxtVpcLBPersistenceProfile(t *testing.T) {
 		t.Run("missing display name/"+name, func(t *testing.T) {
 			vpcLbPrfSetNsxVersion(t, "9.0.0")
 			ctrl := gomock.NewController(t)
-			mockSDK, restore := setupVpcLbPersistenceMock(t, ctrl)
+			_, restore := setupVpcLbPersistenceMock(t, ctrl)
 			defer restore()
 			value := vpcLbDsPersistValue(t, vpcLbDsPersistID, vpcLbDsPersistName, cookie)
 			value.SetField("display_name", data.NewOptionalValue(nil))
-			vpcLbDsPersistList(mockSDK, []*data.StructValue{value}, nil)
+			setupVpcLbProfileSearch(t, []*data.StructValue{value}, nil)
 			ds := dataSourceNsxtVpcLBPersistenceProfile()
 			d := schema.TestResourceDataRaw(t, ds.Schema, vpcLbDsPersistData(map[string]interface{}{"display_name": name, "type": "COOKIE"}))
 			err := ds.Read(d, newGoMockProviderClient())

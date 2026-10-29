@@ -44,7 +44,6 @@ func dataSourceNsxtVpcLBPersistenceProfileRead(d *schema.ResourceData, m interfa
 	connector := getPolicyConnector(m)
 	sessionContext := getSessionContext(d, m)
 	parents := getVpcParentsFromContext(sessionContext)
-	c := cliVpcLbPersistenceProfilesClient(sessionContext, connector)
 	converter := bindings.NewTypeConverter()
 
 	objID := d.Get("id").(string)
@@ -55,6 +54,7 @@ func dataSourceNsxtVpcLBPersistenceProfileRead(d *schema.ResourceData, m interfa
 	var obj model.LBPersistenceProfile
 	if objID != "" {
 		// Get by id
+		c := cliVpcLbPersistenceProfilesClient(sessionContext, connector)
 		objGet, err := c.Get(parents[0], parents[1], parents[2], objID)
 		if err != nil {
 			return handleDataSourceReadError(d, "VPC LBPersistenceProfile", objID, err)
@@ -70,40 +70,33 @@ func dataSourceNsxtVpcLBPersistenceProfileRead(d *schema.ResourceData, m interfa
 	} else if objName == "" && !typeSet {
 		return fmt.Errorf("Error obtaining VPC LBPersistenceProfile name or type during read")
 	} else {
-		// Get by full name/prefix
-		includeMarkForDeleteObjectsParam := false
+		// Match names locally to preserve literal prefixes, including spaces and punctuation.
+		resourceTypes := "(LBCookiePersistenceProfile OR LBGenericPersistenceProfile OR LBSourceIpPersistenceProfile)"
+		resultValues, err := listPolicyResources(connector, sessionContext, resourceTypes, nil)
+		if err != nil {
+			return handleListError("VPC LBPersistenceProfile", err)
+		}
 		var perfectMatch, prefixMatch []model.LBPersistenceProfile
-		var cursor *string
-		for {
-			objList, err := c.List(parents[0], parents[1], parents[2], cursor, &includeMarkForDeleteObjectsParam, nil, nil, nil, nil)
-			if err != nil {
-				return handleListError("VPC LBPersistenceProfile", err)
+		// Prefer an exact name match over a prefix match across all search pages.
+		for _, objInList := range resultValues {
+			profile, errs := converter.ConvertToGolang(objInList, model.LBPersistenceProfileBindingType())
+			if errs != nil {
+				return errs[0]
 			}
-			// go over the list to find the correct one (prefer a perfect match. If not - prefix match)
-			for _, objInList := range objList.Results {
-				profile, errs := converter.ConvertToGolang(objInList, model.LBPersistenceProfileBindingType())
-				if errs != nil {
-					return errs[0]
-				}
-				lbProfile := profile.(model.LBPersistenceProfile)
-				if !dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
-					continue
-				}
+			lbProfile := profile.(model.LBPersistenceProfile)
+			if !dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
+				continue
+			}
 
-				if objName != "" && lbProfile.DisplayName != nil && strings.HasPrefix(*lbProfile.DisplayName, objName) && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
-					prefixMatch = append(prefixMatch, lbProfile)
-				}
-				if objName != "" && lbProfile.DisplayName != nil && *lbProfile.DisplayName == objName && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
-					perfectMatch = append(perfectMatch, lbProfile)
-				}
-				if objName == "" && typeSet && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
-					// match only by type
-					perfectMatch = append(perfectMatch, lbProfile)
-				}
+			if objName != "" && lbProfile.DisplayName != nil && strings.HasPrefix(*lbProfile.DisplayName, objName) && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
+				prefixMatch = append(prefixMatch, lbProfile)
 			}
-			cursor = objList.Cursor
-			if cursor == nil || *cursor == "" {
-				break
+			if objName != "" && lbProfile.DisplayName != nil && *lbProfile.DisplayName == objName && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
+				perfectMatch = append(perfectMatch, lbProfile)
+			}
+			if objName == "" && typeSet && dataSourceNsxtPolicyLbPersistenceProfileTypeMatches(lbProfile, objType) {
+				// match only by type
+				perfectMatch = append(perfectMatch, lbProfile)
 			}
 		}
 		if len(perfectMatch) > 0 {

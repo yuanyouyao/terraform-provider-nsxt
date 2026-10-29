@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	vapiErrors "github.com/vmware/vsphere-automation-sdk-go/lib/vapi/std/errors"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
+	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
 	"go.uber.org/mock/gomock"
 
 	"github.com/vmware/terraform-provider-nsxt/nsxt/util"
@@ -49,6 +50,13 @@ func runVpcLbProfileDataSourceTests(t *testing.T, spec vpcLbProfileDataSourceSpe
 	read := func(t *testing.T, raw map[string]interface{}) (*schema.ResourceData, error) {
 		ds := spec.newDataSource()
 		d := schema.TestResourceDataRaw(t, ds.Schema, vpcLbWithContext(raw))
+		if id, ok := raw["id"].(string); ok && id != "" {
+			stub := &seqQueryListClient{}
+			defer setupCliQueryClientStub(t, stub)()
+			err := ds.Read(d, sessionClient)
+			assert.Empty(t, stub.queries, "ID lookups must bypass Search")
+			return d, err
+		}
 		return d, ds.Read(d, sessionClient)
 	}
 	sv := func(t *testing.T, id, name string) *data.StructValue {
@@ -127,9 +135,9 @@ func runVpcLbProfileDataSourceTests(t *testing.T, spec vpcLbProfileDataSourceSpe
 	})
 
 	t.Run("Read by perfect name match", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, "other", name+"-longer"), sv(t, id, name)}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, "other", name+"-longer"), sv(t, id, name)}, nil)
 		d, err := read(t, map[string]interface{}{"display_name": name})
 		require.NoError(t, err)
 		assert.Equal(t, id, d.Id())
@@ -137,72 +145,72 @@ func runVpcLbProfileDataSourceTests(t *testing.T, spec vpcLbProfileDataSourceSpe
 	})
 
 	t.Run("Read by prefix name match", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, id, name)}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, id, name)}, nil)
 		d, err := read(t, map[string]interface{}{"display_name": "ds-profile"})
 		require.NoError(t, err)
 		assert.Equal(t, id, d.Id())
 	})
 
 	t.Run("Read by name multiple perfect matches", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, "dup-1", "dup"), sv(t, "dup-2", "dup")}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, "dup-1", "dup"), sv(t, "dup-2", "dup")}, nil)
 		_, err := read(t, map[string]interface{}{"display_name": "dup"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "multiple")
 	})
 
 	t.Run("Read by name multiple prefix matches", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, "p-1", "prefix-a"), sv(t, "p-2", "prefix-b")}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, "p-1", "prefix-a"), sv(t, "p-2", "prefix-b")}, nil)
 		_, err := read(t, map[string]interface{}{"display_name": "prefix"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "multiple")
 	})
 
 	t.Run("Read by name not found", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list(nil, nil)
+		setupVpcLbProfileSearch(t, nil, nil)
 		_, err := read(t, map[string]interface{}{"display_name": "nonexistent"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
 
 	t.Run("Read by name filters by type", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, id, name)}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, id, name)}, nil)
 		_, err := read(t, map[string]interface{}{"display_name": name, "type": spec.otherTypeName})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
 
 	t.Run("Read by name and matching type", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, id, name)}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, id, name)}, nil)
 		d, err := read(t, map[string]interface{}{"display_name": name, "type": spec.typeName})
 		require.NoError(t, err)
 		assert.Equal(t, id, d.Id())
 	})
 
 	t.Run("Read by type only", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{sv(t, id, name)}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{sv(t, id, name)}, nil)
 		d, err := read(t, map[string]interface{}{"type": spec.typeName})
 		require.NoError(t, err)
 		assert.Equal(t, id, d.Id())
 	})
 
 	t.Run("Read by name with unknown resource type in list", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list([]*data.StructValue{spec.structValue(t, id, name, "LBUnknownProfile")}, nil)
+		setupVpcLbProfileSearch(t, []*data.StructValue{spec.structValue(t, id, name, "LBUnknownProfile")}, nil)
 		_, err := read(t, map[string]interface{}{"display_name": name})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Error while converting")
@@ -210,9 +218,9 @@ func runVpcLbProfileDataSourceTests(t *testing.T, spec vpcLbProfileDataSourceSpe
 	})
 
 	t.Run("Read by name list error", func(t *testing.T) {
-		m, cleanup := setup(t)
+		_, cleanup := setup(t)
 		defer cleanup()
-		m.list(nil, vapiErrors.InternalServerError{})
+		setupVpcLbProfileSearch(t, nil, vapiErrors.InternalServerError{})
 		_, err := read(t, map[string]interface{}{"display_name": name})
 		require.Error(t, err)
 	})
@@ -227,4 +235,15 @@ func runVpcLbProfileDataSourceTests(t *testing.T, spec vpcLbProfileDataSourceSpe
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Error obtaining")
 	})
+}
+
+// setupVpcLbProfileSearch stubs one page from the shared Search client.
+func setupVpcLbProfileSearch(t *testing.T, results []*data.StructValue, err error) {
+	t.Helper()
+	total := int64(len(results))
+	stub := &seqQueryListClient{
+		responses: []model.SearchResponse{{Results: results, ResultCount: &total}},
+		errs:      []error{err},
+	}
+	t.Cleanup(setupCliQueryClientStub(t, stub))
 }

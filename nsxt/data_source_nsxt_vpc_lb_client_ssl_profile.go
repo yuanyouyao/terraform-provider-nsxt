@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/vmware/vsphere-automation-sdk-go/runtime/bindings"
 	"github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
 
 	"github.com/vmware/terraform-provider-nsxt/nsxt/util"
@@ -35,13 +36,13 @@ func dataSourceNsxtVpcLBClientSslProfileRead(d *schema.ResourceData, m interface
 	connector := getPolicyConnector(m)
 	sessionContext := getSessionContext(d, m)
 	parents := getVpcParentsFromContext(sessionContext)
-	c := cliVpcLbClientSslProfilesClient(sessionContext, connector)
 
 	objID := d.Get("id").(string)
 	objName := d.Get("display_name").(string)
 	var obj model.LBClientSslProfile
 	if objID != "" {
 		// Get by id
+		c := cliVpcLbClientSslProfilesClient(sessionContext, connector)
 		objGet, err := c.Get(parents[0], parents[1], parents[2], objID)
 		if err != nil {
 			return handleDataSourceReadError(d, "VPC LBClientSslProfile", objID, err)
@@ -50,31 +51,33 @@ func dataSourceNsxtVpcLBClientSslProfileRead(d *schema.ResourceData, m interface
 	} else if objName == "" {
 		return fmt.Errorf("Error obtaining VPC LBClientSslProfile ID or name during read")
 	} else {
-		// Get by full name/prefix
-		includeMarkForDeleteObjectsParam := false
+		// Match names locally to preserve literal prefixes, including spaces and punctuation.
+		resourceTypes := "LBClientSslProfile"
+		resultValues, err := listPolicyResources(connector, sessionContext, resourceTypes, nil)
+		if err != nil {
+			return handleListError("VPC LBClientSslProfile", err)
+		}
 		var perfectMatch []model.LBClientSslProfile
 		var prefixMatch []model.LBClientSslProfile
-		var cursor *string
-		for {
-			objList, err := c.List(parents[0], parents[1], parents[2], cursor, &includeMarkForDeleteObjectsParam, nil, nil, nil, nil)
-			if err != nil {
-				return handleListError("VPC LBClientSslProfile", err)
+		converter := bindings.NewTypeConverter()
+		// Prefer an exact name match over a prefix match across all search pages.
+		for _, resultValue := range resultValues {
+			converted, errs := converter.ConvertToGolang(resultValue, model.LBClientSslProfileBindingType())
+			if len(errs) > 0 {
+				return fmt.Errorf("Error while converting VPC LBClientSslProfile for name %q: %w", objName, errs[0])
 			}
-			// go over the list to find the correct one (prefer a perfect match. If not - prefix match)
-			for _, objInList := range objList.Results {
-				if objInList.DisplayName == nil {
-					continue
-				}
-				if strings.HasPrefix(*objInList.DisplayName, objName) {
-					prefixMatch = append(prefixMatch, objInList)
-				}
-				if *objInList.DisplayName == objName {
-					perfectMatch = append(perfectMatch, objInList)
-				}
+			objInList, ok := converted.(model.LBClientSslProfile)
+			if !ok {
+				return fmt.Errorf("Unexpected VPC LBClientSslProfile search result type %T", converted)
 			}
-			cursor = objList.Cursor
-			if cursor == nil || *cursor == "" {
-				break
+			if objInList.DisplayName == nil {
+				continue
+			}
+			if strings.HasPrefix(*objInList.DisplayName, objName) {
+				prefixMatch = append(prefixMatch, objInList)
+			}
+			if *objInList.DisplayName == objName {
+				perfectMatch = append(perfectMatch, objInList)
 			}
 		}
 		if len(perfectMatch) > 0 {

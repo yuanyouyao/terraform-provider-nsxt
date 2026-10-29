@@ -15,7 +15,6 @@ import (
 	vapiErrors "github.com/vmware/vsphere-automation-sdk-go/lib/vapi/std/errors"
 	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
 	vapiProtocolClient "github.com/vmware/vsphere-automation-sdk-go/runtime/protocol/client"
-	nsxModel "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
 	"go.uber.org/mock/gomock"
 
 	apivpcs "github.com/vmware/terraform-provider-nsxt/api/orgs/projects/vpcs"
@@ -54,7 +53,6 @@ type vpcLbProfileMock struct {
 	get     func(id interface{}, sv *data.StructValue, err error) *gomock.Call
 	patch   func(id interface{}, err error) *gomock.Call
 	del     func(id interface{}, err error) *gomock.Call
-	list    func(results []*data.StructValue, err error) *gomock.Call
 	restore func()
 }
 
@@ -79,10 +77,6 @@ func setupVpcLbAppProfileMock(ctrl *gomock.Controller) *vpcLbProfileMock {
 		},
 		del: func(id interface{}, err error) *gomock.Call {
 			return mockSDK.EXPECT().Delete(vpcLbTestOrg, vpcLbTestProject, vpcLbTestVPC, id, gomock.Any()).Return(err)
-		},
-		list: func(results []*data.StructValue, err error) *gomock.Call {
-			return mockSDK.EXPECT().List(vpcLbTestOrg, vpcLbTestProject, vpcLbTestVPC, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(nsxModel.LBAppProfileListResult{Results: results}, err)
 		},
 		restore: func() { cliVpcLbAppProfilesClient = original },
 	}
@@ -109,10 +103,6 @@ func setupVpcLbMonitorProfileMock(ctrl *gomock.Controller) *vpcLbProfileMock {
 		},
 		del: func(id interface{}, err error) *gomock.Call {
 			return mockSDK.EXPECT().Delete(vpcLbTestOrg, vpcLbTestProject, vpcLbTestVPC, id, gomock.Any()).Return(err)
-		},
-		list: func(results []*data.StructValue, err error) *gomock.Call {
-			return mockSDK.EXPECT().List(vpcLbTestOrg, vpcLbTestProject, vpcLbTestVPC, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(nsxModel.LBMonitorProfileListResult{Results: results}, err)
 		},
 		restore: func() { cliVpcLbMonitorProfilesClient = original },
 	}

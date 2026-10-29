@@ -206,7 +206,8 @@ func listInventoryResourcesByType(connector client.Connector, context utl.Sessio
 
 func escapeSpecialCharacters(str string) string {
 	// we replace special characters that can be encountered in object IDs
-	specials := "()[]+-=&|><!{}^~*?:/"
+	// Escape backslashes first so newly added escape characters stay intact.
+	specials := "\\\"()[]+-=&|><!{}^~*?:/ \t\r\n"
 	if !strings.ContainsAny(str, specials) {
 		return str
 	}
@@ -305,10 +306,11 @@ func searchLMPolicyResources(context utl.SessionContext, connector client.Connec
 }
 
 func searchMultitenancyResources(connector client.Connector, context utl.SessionContext, query string) ([]*data.StructValue, error) {
+	projectID := escapeSpecialCharacters(context.ProjectID)
 	if len(context.VPCID) > 0 {
-		query = query + fmt.Sprintf(" AND path:\\/orgs\\/%s\\/projects\\/%s\\/vpcs\\/%s\\/*", utl.DefaultOrgID, context.ProjectID, context.VPCID)
+		query = query + fmt.Sprintf(" AND path:\\/orgs\\/%s\\/projects\\/%s\\/vpcs\\/%s\\/*", utl.DefaultOrgID, projectID, escapeSpecialCharacters(context.VPCID))
 	} else {
-		query = query + fmt.Sprintf(" AND path:\\/orgs\\/%s\\/projects\\/%s\\/*", utl.DefaultOrgID, context.ProjectID)
+		query = query + fmt.Sprintf(" AND path:\\/orgs\\/%s\\/projects\\/%s\\/*", utl.DefaultOrgID, projectID)
 	}
 	return searchLM(context, connector, query)
 }

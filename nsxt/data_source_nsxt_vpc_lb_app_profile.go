@@ -43,7 +43,6 @@ func dataSourceNsxtVpcLBAppProfileRead(d *schema.ResourceData, m interface{}) er
 	connector := getPolicyConnector(m)
 	sessionContext := getSessionContext(d, m)
 	parents := getVpcParentsFromContext(sessionContext)
-	c := cliVpcLbAppProfilesClient(sessionContext, connector)
 
 	objID := d.Get("id").(string)
 	objTypeValue, typeSet := d.GetOk("type")
@@ -52,6 +51,7 @@ func dataSourceNsxtVpcLBAppProfileRead(d *schema.ResourceData, m interface{}) er
 	var result *model.LBAppProfile
 	if objID != "" {
 		// Get by id
+		c := cliVpcLbAppProfilesClient(sessionContext, connector)
 		objGet, err := c.Get(parents[0], parents[1], parents[2], objID)
 
 		if err != nil {
@@ -67,39 +67,32 @@ func dataSourceNsxtVpcLBAppProfileRead(d *schema.ResourceData, m interface{}) er
 	} else if objName == "" && !typeSet {
 		return fmt.Errorf("Error obtaining VPC LBAppProfile ID or name or type during read")
 	} else {
-		// Get by full name/prefix
-		includeMarkForDeleteObjectsParam := false
+		// Match names locally to preserve literal prefixes, including spaces and punctuation.
+		resourceTypes := "(LBFastTcpProfile OR LBFastUdpProfile OR LBHttpProfile)"
+		resultValues, err := listPolicyResources(connector, sessionContext, resourceTypes, nil)
+		if err != nil {
+			return handleListError("VPC LBAppProfile", err)
+		}
 		var perfectMatch []model.LBAppProfile
 		var prefixMatch []model.LBAppProfile
-		var cursor *string
-		for {
-			objList, err := c.List(parents[0], parents[1], parents[2], cursor, &includeMarkForDeleteObjectsParam, nil, nil, nil, nil)
+		// Prefer an exact name match over a prefix match across all search pages.
+		for _, objInList := range resultValues {
+			obj, err := policyLbAppProfileConvert(objInList, objType)
 			if err != nil {
-				return handleListError("VPC LBAppProfile", err)
+				return fmt.Errorf("Error while converting VPC LBAppProfile for name %q and type %s: %w", objName, objType, err)
 			}
-			// go over the list to find the correct one (prefer a perfect match. If not - prefix match)
-			for _, objInList := range objList.Results {
-				obj, err := policyLbAppProfileConvert(objInList, objType)
-				if err != nil {
-					return fmt.Errorf("Error while converting VPC LBAppProfile for name %q and type %s: %w", objName, objType, err)
-				}
-				if obj == nil {
-					continue
-				}
-				if objName != "" && obj.DisplayName != nil && strings.HasPrefix(*obj.DisplayName, objName) {
-					prefixMatch = append(prefixMatch, *obj)
-				}
-				if obj.DisplayName != nil && *obj.DisplayName == objName {
-					perfectMatch = append(perfectMatch, *obj)
-				}
-				if objName == "" && typeSet {
-					// match only by type
-					perfectMatch = append(perfectMatch, *obj)
-				}
+			if obj == nil {
+				continue
 			}
-			cursor = objList.Cursor
-			if cursor == nil || *cursor == "" {
-				break
+			if objName != "" && obj.DisplayName != nil && strings.HasPrefix(*obj.DisplayName, objName) {
+				prefixMatch = append(prefixMatch, *obj)
+			}
+			if objName != "" && obj.DisplayName != nil && *obj.DisplayName == objName {
+				perfectMatch = append(perfectMatch, *obj)
+			}
+			if objName == "" && typeSet {
+				// match only by type
+				perfectMatch = append(perfectMatch, *obj)
 			}
 		}
 		if len(perfectMatch) > 0 {

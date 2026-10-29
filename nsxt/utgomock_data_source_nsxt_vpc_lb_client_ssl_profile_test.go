@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	vapiErrors "github.com/vmware/vsphere-automation-sdk-go/lib/vapi/std/errors"
+	"github.com/vmware/vsphere-automation-sdk-go/runtime/data"
 	nsxModel "github.com/vmware/vsphere-automation-sdk-go/services/nsxt/model"
 	"go.uber.org/mock/gomock"
 
@@ -40,86 +41,98 @@ func TestMockDataSourceNsxtVpcLBClientSslProfile(t *testing.T) {
 		name    string
 		version string
 		input   map[string]interface{}
-		setup   func(m *vpcsmocks.MockVpcLbClientSslProfilesClient)
+		setup   func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient)
 		errMsg  string
 		wantID  string
 	}
-	list := func(m *vpcsmocks.MockVpcLbClientSslProfilesClient, results []nsxModel.LBClientSslProfile, err error) {
-		m.EXPECT().List(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nsxModel.LBClientSslProfileListResult{Results: results}, err)
+	list := func(t *testing.T, results []nsxModel.LBClientSslProfile, err error) {
+		values := make([]*data.StructValue, 0, len(results))
+		for _, result := range results {
+			values = append(values, lbPersistenceProfileStructValue(t, result, nsxModel.LBClientSslProfileBindingType()))
+		}
+		setupVpcLbProfileSearch(t, values, err)
 	}
 	cases := []testCase{
 		{
+			name: "malformed search result", input: map[string]interface{}{"display_name": "bad-profile"},
+			setup: func(t *testing.T, _ *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				value := lbPersistenceProfileStructValue(t, vpcLbDsClientSslItem("bad-id", "bad-profile"), nsxModel.LBClientSslProfileBindingType())
+				value.SetField("display_name", data.NewIntegerValue(1))
+				setupVpcLbProfileSearch(t, []*data.StructValue{value}, nil)
+			},
+			errMsg: "Error while converting VPC LBClientSslProfile for name",
+		},
+		{
 			name: "by ID", input: map[string]interface{}{"id": vpcLbClientSslID},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
 				m.EXPECT().Get(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, vpcLbClientSslID).Return(vpcLbClientSslAPIResponse(), nil)
 			},
 			wantID: vpcLbClientSslID,
 		},
 		{
 			name: "by ID not found", input: map[string]interface{}{"id": vpcLbClientSslID},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
 				m.EXPECT().Get(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, vpcLbClientSslID).Return(nsxModel.LBClientSslProfile{}, vapiErrors.NotFound{})
 			},
 			errMsg: "Failed to read",
 		},
 		{
 			name: "by ID API error", input: map[string]interface{}{"id": vpcLbClientSslID},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
 				m.EXPECT().Get(vpcLbPrfOrg, vpcLbPrfProject, vpcLbPrfVpc, vpcLbClientSslID).Return(nsxModel.LBClientSslProfile{}, vapiErrors.InternalServerError{})
 			},
 			errMsg: "LBClientSslProfile",
 		},
 		{
 			name: "by name perfect match", input: map[string]interface{}{"display_name": vpcLbClientSslDisplayName},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("other", vpcLbClientSslDisplayName+" extra"), vpcLbDsClientSslItem(vpcLbClientSslID, vpcLbClientSslDisplayName)}, nil)
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("other", vpcLbClientSslDisplayName+" extra"), vpcLbDsClientSslItem(vpcLbClientSslID, vpcLbClientSslDisplayName)}, nil)
 			},
 			wantID: vpcLbClientSslID,
 		},
 		{
 			name: "by name prefix match", input: map[string]interface{}{"display_name": "Test VPC LB"},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem(vpcLbClientSslID, vpcLbClientSslDisplayName)}, nil)
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem(vpcLbClientSslID, vpcLbClientSslDisplayName)}, nil)
 			},
 			wantID: vpcLbClientSslID,
 		},
 		{
 			name: "multiple perfect matches", input: map[string]interface{}{"display_name": "dup"},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("d1", "dup"), vpcLbDsClientSslItem("d2", "dup")}, nil)
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("d1", "dup"), vpcLbDsClientSslItem("d2", "dup")}, nil)
 			},
 			errMsg: "multiple",
 		},
 		{
 			name: "multiple prefix matches", input: map[string]interface{}{"display_name": "prefix"},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("p1", "prefix-a"), vpcLbDsClientSslItem("p2", "prefix-b")}, nil)
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, []nsxModel.LBClientSslProfile{vpcLbDsClientSslItem("p1", "prefix-a"), vpcLbDsClientSslItem("p2", "prefix-b")}, nil)
 			},
 			errMsg: "multiple",
 		},
 		{
 			name: "name not found", input: map[string]interface{}{"display_name": "nonexistent"},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, nil, nil)
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, nil, nil)
 			},
 			errMsg: "not found",
 		},
 		{
 			name: "list API error", input: map[string]interface{}{"display_name": "x"},
-			setup: func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
-				list(m, nil, vapiErrors.InternalServerError{})
+			setup: func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {
+				list(t, nil, vapiErrors.InternalServerError{})
 			},
 			errMsg: "LBClientSslProfile",
 		},
 		{
 			name: "neither id nor name", input: map[string]interface{}{},
-			setup:  func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {},
+			setup:  func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {},
 			errMsg: "Error obtaining",
 		},
 		{
 			name: "NSX version lower than 9.0.0", version: "4.2.0", input: map[string]interface{}{"id": vpcLbClientSslID},
-			setup:  func(m *vpcsmocks.MockVpcLbClientSslProfilesClient) {},
+			setup:  func(t *testing.T, m *vpcsmocks.MockVpcLbClientSslProfilesClient) {},
 			errMsg: "9.0.0",
 		},
 	}
@@ -135,7 +148,7 @@ func TestMockDataSourceNsxtVpcLBClientSslProfile(t *testing.T) {
 			defer ctrl.Finish()
 			mockSDK, restore := setupVpcLbClientSslMock(t, ctrl)
 			defer restore()
-			tc.setup(mockSDK)
+			tc.setup(t, mockSDK)
 
 			ds := dataSourceNsxtVpcLBClientSslProfile()
 			d := schema.TestResourceDataRaw(t, ds.Schema, vpcLbDsClientSslData(tc.input))
