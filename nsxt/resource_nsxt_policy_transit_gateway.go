@@ -138,7 +138,9 @@ var transitGatewaySchema = map[string]*metadata.ExtendedSchema{
 											model.TransitGatewayBgpRedistributionRule_ROUTE_REDISTRIBUTION_TYPES_PUBLIC,
 											model.TransitGatewayBgpRedistributionRule_ROUTE_REDISTRIBUTION_TYPES_TGW_PRIVATE,
 											model.TransitGatewayBgpRedistributionRule_ROUTE_REDISTRIBUTION_TYPES_TGW_STATIC_ROUTE,
-											model.TransitGatewayBgpRedistributionRule_ROUTE_REDISTRIBUTION_TYPES_CONNECTED_SUBNET,
+											// The pinned SDK predates the CONNECTED_SUBNET rename.
+											"NETWORK_ATTACHMENT",
+											model.TransitGatewayBgpRedistributionRule_ROUTE_REDISTRIBUTION_TYPES_TGW_IPSEC_LOCAL_IP,
 										}, false),
 									},
 								},
