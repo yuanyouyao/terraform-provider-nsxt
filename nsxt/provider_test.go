@@ -221,7 +221,7 @@ func testAccNSXVersion(t *testing.T, requiredVersion string) {
 			return
 		}
 
-		err = initNSXVersion(connector)
+		err = initNSXVersion(connector, "")
 		if err != nil {
 			t.Errorf("Failed to retrieve NSX version")
 			return
@@ -241,7 +241,7 @@ func testAccNSXVersionLessThan(t *testing.T, requiredVersion string) {
 			return
 		}
 
-		err = initNSXVersion(connector)
+		err = initNSXVersion(connector, "")
 		if err != nil {
 			t.Errorf("Failed to retrieve NSX version")
 			return
@@ -259,7 +259,7 @@ func testAccNSXVersionLessThan(t *testing.T, requiredVersion string) {
 func testAccGatewayDHCPConfig() (string, string) {
 	if util.NsxVersion == "" {
 		if connector, err := testAccGetPolicyConnector(); err == nil {
-			_ = initNSXVersion(connector)
+			_ = initNSXVersion(connector, "")
 		}
 	}
 	if util.NsxVersion != "" && util.NsxVersionLower("9.2.0") {

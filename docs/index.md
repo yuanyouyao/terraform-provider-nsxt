@@ -238,6 +238,15 @@ The following arguments are used to configure the provider:
   data sources. For VMC environment, this should be set to `vmc-enforcementpoint`.
   For on-prem deployments, this setting should not be specified.
 * `global_manager` - (Optional) True if this is a global manager endpoint.
+* `nsx_version` - (Optional) Explicit NSX product version, for example `9.2.0.0.25956201`.
+  Can also be set with `NSXT_VERSION`. Use this workaround when the deployment does
+  not expose the node version API, such as Global Manager on VMSP. An empty value
+  retains automatic discovery. The override skips version discovery, including its
+  startup connectivity check; resource requests still use configured authentication
+  and TLS settings. Use the actual deployed version because it controls feature
+  availability checks, and update it after upgrading NSX. This also applies when
+  `on_demand_connection` is enabled. The provider currently shares its discovered
+  version across aliases; configuring aliases for different NSX versions is not supported.
   False by default.
 * `license_keys` - (Optional) List of NSX-T license keys. License keys are applied
   during plan or apply commands. Note that the provider will not remove license keys if

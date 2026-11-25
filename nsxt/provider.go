@@ -78,6 +78,7 @@ type nsxtClients struct {
 	PolicyGlobalManager    bool
 	PolicyIsVMC            bool
 	DefaultSpanPath        string
+	VersionOverride        string
 }
 
 // Provider for VMWare NSX-T
@@ -226,6 +227,16 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				Description: "Is this a policy global manager endpoint",
 				DefaultFunc: schema.EnvDefaultFunc("NSXT_GLOBAL_MANAGER", false),
+			},
+			"nsx_version": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Explicit NSX product version; skips automatic version discovery",
+				DefaultFunc: schema.EnvDefaultFunc("NSXT_VERSION", ""),
+				ValidateFunc: validation.StringMatch(
+					regexp.MustCompile(`^$|^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)*$`),
+					"must be a numeric NSX version such as 9.2.0 or 9.2.0.0.25956201",
+				),
 			},
 			"license_keys": {
 				Type:          schema.TypeList,
@@ -966,6 +977,11 @@ func configurePolicyConnectorData(d *schema.ResourceData, clients *nsxtClients) 
 	clients.PolicyEnforcementPoint = policyEnforcementPoint
 	clients.PolicyGlobalManager = policyGlobalManager
 	clients.PolicyIsVMC = isVMC
+	versionOverride, ok := d.Get("nsx_version").(string)
+	if !ok {
+		return fmt.Errorf("nsx_version must be a string")
+	}
+	clients.VersionOverride = versionOverride
 
 	if onDemandConn {
 		// version init will happen on demand
@@ -979,7 +995,7 @@ func configurePolicyConnectorData(d *schema.ResourceData, clients *nsxtClients) 
 		}
 	}
 
-	err = initNSXVersion(getStandalonePolicyConnector(*clients, true))
+	err = initNSXVersion(getStandalonePolicyConnector(*clients, true), clients.VersionOverride)
 	if err != nil && isVMC {
 		// In case version API does not work for VMC, we workaround by testing version-specific APIs
 		// TODO - remove this when /node/version API works for all auth methods on VMC
@@ -1357,7 +1373,7 @@ func getPolicyConnectorWithHeaders(clients interface{}, customHeaders *map[strin
 	// This is also our indication to apply licenses, in case of delayed connection
 	// This step is skipped if the connector is for special purpose, or for different endpoint
 	if util.NsxVersion == "" && !standaloneFlow {
-		initNSXVersion(connector)
+		initNSXVersion(connector, c.VersionOverride)
 		err := configureLicenses(connector, c.CommonConfig.LicenseKeys)
 		if err != nil {
 			log.Printf("[ERROR]: Failed to apply NSX licenses")

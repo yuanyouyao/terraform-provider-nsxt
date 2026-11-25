@@ -13,6 +13,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	vapiProtocolClient "github.com/vmware/vsphere-automation-sdk-go/runtime/protocol/client"
@@ -22,7 +23,61 @@ import (
 	nodeAPI "github.com/vmware/terraform-provider-nsxt/api/nsx/node"
 	utl "github.com/vmware/terraform-provider-nsxt/api/utl"
 	nodemocks "github.com/vmware/terraform-provider-nsxt/mocks/nsx/node"
+	"github.com/vmware/terraform-provider-nsxt/nsxt/util"
 )
+
+func TestMockNsxtVersionOverride(t *testing.T) {
+	previous := util.NsxVersion
+	t.Cleanup(func() { util.NsxVersion = previous })
+	ctrl := gomock.NewController(t)
+	_, restore := setupVersionMock(ctrl)
+	t.Cleanup(restore)
+
+	// No Get expectation: configuring an override must never contact the version API.
+	util.NsxVersion = "4.2.0"
+	require.NoError(t, initNSXVersion(nil, "9.2.0.0.25956201"))
+	assert.Equal(t, "9.2.0.0.25956201", util.NsxVersion)
+	assert.True(t, util.NsxVersionHigherOrEqual("9.2.0"))
+}
+
+func TestMockNsxtVersionOverrideValidation(t *testing.T) {
+	validate := Provider().Schema["nsx_version"].ValidateFunc
+	for _, value := range []string{"", "9.2.0", "9.2.0.0.25956201"} {
+		_, errs := validate(value, "nsx_version")
+		assert.Empty(t, errs, value)
+	}
+	for _, value := range []string{"latest", "9.2", "9.2.0.", " 9.2.0", "9.2.0-beta"} {
+		_, errs := validate(value, "nsx_version")
+		assert.NotEmpty(t, errs, value)
+	}
+}
+
+func TestMockNsxtVersionOverrideInitialization(t *testing.T) {
+	previous := util.NsxVersion
+	t.Cleanup(func() { util.NsxVersion = previous })
+	ctrl := gomock.NewController(t)
+	_, restore := setupVersionMock(ctrl)
+	t.Cleanup(restore)
+	t.Setenv("NSXT_VERSION", "9.2.0.0.25956201")
+
+	for _, deferred := range []bool{false, true} {
+		util.NsxVersion = ""
+		data := schema.TestResourceDataRaw(t, Provider().Schema, map[string]interface{}{
+			"host":                 "example.invalid",
+			"username":             "admin",
+			"password":             "test-only-password",
+			"global_manager":       true,
+			"on_demand_connection": deferred,
+		})
+		clients := &nsxtClients{}
+		require.NoError(t, configurePolicyConnectorData(data, clients))
+		if deferred {
+			assert.Empty(t, util.NsxVersion)
+			getPolicyConnector(*clients)
+		}
+		assert.Equal(t, "9.2.0.0.25956201", util.NsxVersion)
+	}
+}
 
 func setupVersionMock(ctrl *gomock.Controller) (*nodemocks.MockVersionClient, func()) {
 	mockSDK := nodemocks.NewMockVersionClient(ctrl)
@@ -93,7 +148,7 @@ func TestMockNsxtInitNSXVersion(t *testing.T) {
 		productVersion := "4.1.0"
 		mockSDK.EXPECT().Get().Return(nsxModel.NodeVersion{NodeVersion: &nodeVersion, ProductVersion: &productVersion}, nil)
 
-		err := initNSXVersion(nil)
+		err := initNSXVersion(nil, "")
 		require.NoError(t, err)
 	})
 
@@ -105,7 +160,7 @@ func TestMockNsxtInitNSXVersion(t *testing.T) {
 
 		mockSDK.EXPECT().Get().Return(nsxModel.NodeVersion{}, errors.New("connection error"))
 
-		err := initNSXVersion(nil)
+		err := initNSXVersion(nil, "")
 		require.Error(t, err)
 	})
 }

@@ -175,7 +175,13 @@ func getNSXVersion(connector client.Connector) (string, error) {
 	return "", logAPIError("Failed to retrieve NSX version, but no error reported by NSX", err)
 }
 
-func initNSXVersion(connector client.Connector) error {
+// initNSXVersion uses versionOverride when provided, otherwise queries the node API.
+func initNSXVersion(connector client.Connector, versionOverride string) error {
+	if versionOverride != "" {
+		util.NsxVersion = versionOverride
+		log.Printf("[INFO] Using configured NSX version %s; skipping version discovery", versionOverride)
+		return nil
+	}
 	var err error
 	util.NsxVersion, err = getNSXVersion(connector)
 	return err
